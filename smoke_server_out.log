@@ -1,0 +1,4 @@
+◇ injected env (6) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+Server running on port 5000
+MongoDB Connected: localhost
+[0mPOST /api/auth/register [32m201[0m 220.405 ms - 365[0m
