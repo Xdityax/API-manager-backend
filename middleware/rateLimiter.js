@@ -10,7 +10,8 @@ const limiterOptions = {
 if (process.env.REDIS_URL) {
     const redisClient = new Redis(process.env.REDIS_URL, {
         maxRetriesPerRequest: 1,
-        enableOfflineQueue: false
+        enableOfflineQueue: true,
+        lazyConnect: true
     });
 
     // Prevent unhandled Redis errors from crashing the process.

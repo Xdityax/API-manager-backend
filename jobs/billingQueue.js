@@ -6,7 +6,8 @@ let billingQueue = null;
 if (process.env.REDIS_URL) {
 	const connection = new Redis(process.env.REDIS_URL, {
 		maxRetriesPerRequest: 1,
-		enableOfflineQueue: false
+		enableOfflineQueue: true,
+		lazyConnect: true
 	});
 
 	connection.on("error", (error) => {
