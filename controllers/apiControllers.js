@@ -254,6 +254,12 @@ const getConsumerOverview = async (req, res) => {
 		}));
 
 		const currentUsageCost = Number(monthlyCost[monthlyCost.length - 1]?.cost || 0);
+		const successCount = Math.max(totalRequestsNumber - totalErrors, 0);
+		const successErrorMix = [
+			{ name: "Successful", value: successCount },
+			{ name: "Errors", value: totalErrors }
+		];
+
 		return res.status(200).json({
 			success: true,
 			data: {
@@ -265,7 +271,13 @@ const getConsumerOverview = async (req, res) => {
 				requestsThisMonth: totalRequestsNumber,
 				currentUsageCost,
 				errorRate,
-					apis: ownedApis.map((api) => ({
+				charts: {
+					dailyUsage,
+					monthlyCost,
+					responseTime,
+					successErrorMix
+				},
+				apis: ownedApis.map((api) => ({
 					_id: api._id,
 					name: api.name,
 					baseUrl: api.baseUrl,
@@ -276,22 +288,22 @@ const getConsumerOverview = async (req, res) => {
 						name: "MeterFlow",
 						email: ""
 					}
-					})),
-					subscriptions: ownedApis.map((api) => ({
-						id: api._id,
-						name: api.name,
-						baseUrl: api.baseUrl,
-						description: api.description || "",
-						pricingPer100Requests: api.pricingPer100Requests,
-						rateLimitPerMinute: api.rateLimitPerMinute,
-						provider: {
-							name: "MeterFlow",
-							email: ""
-						}
-					})),
-					recentRequests,
-					invoices: [],
-					usageAlerts: []
+				})),
+				subscriptions: ownedApis.map((api) => ({
+					id: api._id,
+					name: api.name,
+					baseUrl: api.baseUrl,
+					description: api.description || "",
+					pricingPer100Requests: api.pricingPer100Requests,
+					rateLimitPerMinute: api.rateLimitPerMinute,
+					provider: {
+						name: "MeterFlow",
+						email: ""
+					}
+				})),
+				recentRequests,
+				invoices: [],
+				usageAlerts: []
 			}
 		});
 	} catch (error) {
@@ -481,19 +493,11 @@ const getDashboardOverview = async (req, res) => {
 					avgLatency: Math.round(latencyAgg[0]?.avgLatency || 0),
 					estimatedRevenue: Number(estimatedRevenue.toFixed(2))
 				},
-				charts: {
-					dailyUsage,
-					monthlyCost,
-					responseTime,
-					successErrorMix: [
-						{ name: "Successful", value: Math.max(totalRequestsNumber - totalErrors, 0) },
-						{ name: "Errors", value: totalErrors }
-					]
-				},
 				apis
 			}
 		});
 	} catch (error) {
+		console.error("Dashboard overview error:", error);
 		return res.status(500).json({
 			success: false,
 			message: "Unable to fetch dashboard overview"
