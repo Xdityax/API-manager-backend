@@ -9,7 +9,7 @@ const limiterOptions = {
 
 if (process.env.REDIS_URL) {
     const redisClient = new Redis(process.env.REDIS_URL, {
-        maxRetriesPerRequest: 1,
+        maxRetriesPerRequest: 2,
         enableOfflineQueue: true,
         lazyConnect: true
     });
@@ -19,9 +19,13 @@ if (process.env.REDIS_URL) {
         console.error("Rate limiter Redis error:", error.message);
     });
 
-    limiterOptions.store = new RedisStore({
-        sendCommand: (...args) => redisClient.call(...args)
-    });
+    try {
+        limiterOptions.store = new RedisStore({
+            sendCommand: (...args) => redisClient.call(...args)
+        });
+    } catch (error) {
+        console.error("Rate limiter Redis store disabled:", error.message);
+    }
 }
 
 const limiter = rateLimit(limiterOptions);
