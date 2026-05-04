@@ -1,5 +1,6 @@
 const Api = require("../models/Api");
 const ApiKey = require("../models/ApiKeys");
+const ActivityLog = require("../models/activityLog");
 const Usage = require("../models/usage");
 const User = require("../models/user");
 const generateApiKey = require("../utils/generateApi");
@@ -147,14 +148,13 @@ const getConsumerOverview = async (req, res) => {
 		]);
 
 		const averageLatency = Math.round(latencyAgg[0]?.avgLatency || 0);
-		const [dailyUsageDocs, monthlyUsageDocs, responseTimeDocs] = await Promise.all([
-			Usage.aggregate([
-				{ $match: { apiKey: { $in: apiKeyStrings }, timestamp: { $gte: weekStartUtc } } },
+		const [weeklyApiKeyGenerationDocs, monthlyUsageDocs, responseTimeDocs] = await Promise.all([
+			ActivityLog.aggregate([
+				{ $match: { user: req.user.id, type: "api_key_generated", timestamp: { $gte: weekStartUtc, $lte: todayUtc } } },
 				{
 					$group: {
 						_id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone: "UTC" } },
-						totalRequests: { $sum: 1 },
-						avgLatency: { $avg: "$latency" }
+						totalKeys: { $sum: 1 }
 					}
 				},
 				{ $sort: { _id: 1 } }
@@ -187,13 +187,28 @@ const getConsumerOverview = async (req, res) => {
 		const totalRequestsNumber = Number(totalRequests || 0);
 		const errorRate = totalRequestsNumber ? Number(((totalErrors / totalRequestsNumber) * 100).toFixed(2)) : 0;
 
-		const dailyUsageMap = new Map(dailyUsageDocs.map((entry) => [entry._id, entry]));
-		const dailyUsage = buildUtcDateRange(weekStartUtc, todayUtc).map(({ key, label }) => {
-			const entry = dailyUsageMap.get(key);
+		const weeklyApiKeyGenerationMap = new Map(weeklyApiKeyGenerationDocs.map((entry) => [entry._id, entry]));
+		if (!weeklyApiKeyGenerationDocs.length) {
+			const apiKeyGenerationFallback = await ApiKey.aggregate([
+				{ $match: { user: req.user.id, createdAt: { $gte: weekStartUtc, $lte: todayUtc } } },
+				{
+					$group: {
+						_id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: "UTC" } },
+						totalKeys: { $sum: 1 }
+					}
+				},
+				{ $sort: { _id: 1 } }
+			]);
+
+			for (const entry of apiKeyGenerationFallback) {
+				weeklyApiKeyGenerationMap.set(entry._id, entry);
+			}
+		}
+		const weeklyApiKeyGenerations = buildUtcDateRange(weekStartUtc, todayUtc).map(({ key, label }) => {
+			const entry = weeklyApiKeyGenerationMap.get(key);
 			return {
 				day: label,
-				requests: Number(entry?.totalRequests || 0),
-				avgLatency: Math.round(entry?.avgLatency || 0)
+				requests: Number(entry?.totalKeys || 0)
 			};
 		});
 
@@ -236,8 +251,7 @@ const getConsumerOverview = async (req, res) => {
 			.map((api) => ({
 				api: apiNameMap.get(String(api._id)) || api.name || "API",
 				latency: responseTimeByApi.get(String(api._id)) || 0
-			}))
-			.filter((entry) => entry.latency > 0);
+			}));
 
 		const recentUsageDocs = apiKeyStrings.length
 			? await Usage.find({ apiKey: { $in: apiKeyStrings } }).sort({ timestamp: -1 }).limit(4)
@@ -272,7 +286,8 @@ const getConsumerOverview = async (req, res) => {
 				currentUsageCost,
 				errorRate,
 				charts: {
-					dailyUsage,
+					dailyUsage: weeklyApiKeyGenerations,
+					weeklyApiKeyGenerations,
 					monthlyCost,
 					responseTime,
 					successErrorMix
@@ -331,6 +346,18 @@ const createApiKeyForApi = async (req, res) => {
 			api: api._id,
 			key: generateApiKey(),
 			active: true
+		});
+
+		await ActivityLog.create({
+			user: req.user.id,
+			type: "api_key_generated",
+			title: "API key generated",
+			detail: `Generated a new key for ${api.name || "API"}.`,
+			metadata: {
+				apiId: String(api._id),
+				apiName: api.name || "API",
+				keyId: String(apiKeyDoc._id)
+			}
 		});
 
 		const user = await User.findById(req.user.id);
